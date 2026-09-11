@@ -92,8 +92,8 @@ iverilog -g2012 -o mac_sim tb/macTB.v rtl/mac.v
 vvp mac_sim
 
 # Full 2x2 array
-iverilog -g2012 -o sys tb/systolic_2x2TB.v rtl/systolic_2x2.v rtl/mac.v
-vvp sys
+iverilog -g2012 -o systolic_sim tb/systolic_2x2TB.v rtl/systolic_2x2.v rtl/mac.v
+vvp systolic_sim
 ```
 
 Note that `rtl/mac.v` holds a module named `mac_unit`, so it has to be listed on the command line explicitly. Icarus can also search a directory for missing modules with `-y rtl`, but that option matches modules to files by name, so it would only work here if the file were renamed to `mac_unit.v`.
@@ -148,11 +148,11 @@ Console output tells us the answers came out right, but it doesn't tell us the a
 
 ![GTKWave capture of the 2x2 systolic array, showing activations and partial sums propagating between processing elements](docs/waveform.png)
 
-Reading it left to right, the reset holds everything at zero until 10, and the first rising edge afterward starts the array moving. Table 2 walks through what each edge produces.
+The testbench clocks at a 10 ns period, so every value below lands on a rising edge one full cycle after the one before it. Reading the capture left to right, the reset holds everything at zero until 10 ns, and the first rising edge afterward starts the array moving. Table 2 walks through what each edge produces.
 
 *Table 2: Internal Wire Values at Each Clock Edge*
 
-| Time | Wire | Value | Where it came from |
+| Time (ns) | Wire | Value | Where it came from |
 |---|---|---|---|
 | 15 | `act_BL_to_TL` | 5 | `mac_BL` passes its activation up to `mac_TL` |
 | 15 | `sum_BL_to_BR` | 15 | `mac_BL` computes 3 · 5, the array's first product |
@@ -169,15 +169,13 @@ Reading it left to right, the reset holds everything at zero until 10, and the f
 
 Three things in this capture are worth calling out, because together they're the real proof the design works rather than merely producing the right digits.
 
-First, the skew is visible. `act_BL_to_TL` picks up its first value at 15 while `act_BR_to_TR` doesn't move until 25, exactly one clock period behind. That's the staggered input schedule from earlier, and seeing it on the wire confirms the columns really are offset rather than the answer coming out right by luck.
+First, the skew is visible. `act_BL_to_TL` picks up its first value at 15 ns while `act_BR_to_TR` doesn't move until 25 ns, exactly one clock period behind. That's the staggered input schedule from earlier, and seeing it on the wire confirms the columns really are offset rather than the answer coming out right by luck.
 
-Next, we can watch a partial sum grow as it crosses the array. At 15, `sum_BL_to_BR` holds 15, which is `mac_BL`'s product alone. One cycle later that same 15 has traveled to `mac_BR`, been added to `4 · 7`, and emerged on `sum_out_row_bot` as 43. That is a dot product being assembled in two pieces by two different elements, one cycle apart, which is the entire premise of a systolic array made visible.
+Next, we can watch a partial sum grow as it crosses the array. At 15 ns, `sum_BL_to_BR` holds 15, which is `mac_BL`'s product alone. One cycle later that same 15 has traveled to `mac_BR`, been added to `4 · 7`, and emerged on `sum_out_row_bot` as 43. That is a dot product being assembled in two pieces by two different elements, one cycle apart, which is the entire premise of a systolic array made visible.
 
-The two trailing values, `32` at 45 and `16` at 55, are the undrained-pipeline artifact described above, now visible as the tail of the capture rather than a stray line of console output.
+The two trailing values, `32` at 45 ns and `16` at 55 ns, are the undrained-pipeline artifact described above, now visible as the tail of the capture rather than a stray line of console output.
 
-Lastly, the row offset shows up on the output side. `sum_out_row_bot` produces 43 at 25, a full cycle before `sum_out_row_top` produces 19 at 35. The bottom row finishes first because its activations entered first, so the skew we introduced at the input propagates all the way through to the output. Reading these two rows as if they appeared simultaneously is exactly the mistake that makes a working array look broken.
-
-One caveat on the figure, the time axis reads in seconds because `tb/systolic_2x2TB.v` has no `` `timescale `` directive, so the simulator falls back to its default unit. It has no effect on the arithmetic, but the units are meaningless and the directive belongs in the testbench.
+Lastly, the row offset shows up on the output side. `sum_out_row_bot` produces 43 at 25 ns, a full cycle before `sum_out_row_top` produces 19 at 35 ns. The bottom row finishes first because its activations entered first, so the skew we introduced at the input propagates all the way through to the output. Reading these two rows as if they appeared simultaneously is exactly the mistake that makes a working array look broken.
 
 ## Limitations
 
@@ -190,7 +188,7 @@ Knowing where a design stops is part of the design, so stated plainly:
 - **No memory interface.** Weights and activations are driven directly by the testbench. There's no bus interface, no weight-load state machine, and no buffering.
 - **The pipeline is not drained.** As seen above, the array keeps computing on stale activations once the input stream stops.
 
-Two smaller things worth flagging. `tb/macTB.v` declares its `sum_in` and `sum_out` as 17 bits while the module's ports are 18, so Icarus pads the difference and warns about it. The test still passes, but the testbench should match the module's `SUM_WIDTH` formula rather than hardcoding a width. Separately, `tb/systolic_2x2TB.v` is missing a `` `timescale `` directive, which is why its waveform reads in seconds.
+One smaller thing worth flagging. `tb/macTB.v` declares its `sum_in` and `sum_out` as 17 bits while the module's ports are 18, so Icarus pads the difference and warns about it. The test still passes, but the testbench should match the module's `SUM_WIDTH` formula rather than hardcoding a width.
 
 ## Roadmap
 
@@ -201,7 +199,6 @@ Two smaller things worth flagging. `tb/macTB.v` declares its `sum_in` and `sum_o
 - [ ] Drain the pipeline properly at the end of an input stream
 - [ ] Run through Yosys for real area and timing numbers
 - [ ] Add a weight-load FSM so weights stream in rather than being set directly
-- [ ] Add a `` `timescale `` to the array testbench so waveforms read in nanoseconds
 
 ## Repository Layout
 
