@@ -1,0 +1,13 @@
+# Simulation artifacts
+*.vcd
+*.out
+*.lxt
+*.fst
+a.out
+*_sim
+sim/
+
+# Editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
